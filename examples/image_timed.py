@@ -3,7 +3,7 @@ import sys
 import time
 
 from PIL import Image
-from OrangePi import ILI9341
+from OrangePi_ILI9341 import ILI9341
 
 SPI_PORT = 0
 SPI_CS = 0

@@ -28,7 +28,7 @@ from PIL import ImageDraw
 import spidev
 import OPi.GPIO as GPIO
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 # Constants for interacting with display registers.
 ILI9341_TFTWIDTH    = 240
