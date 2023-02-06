@@ -13,17 +13,17 @@ BACKLIGHT = 22 # PA3
 
 # Create TFT LCD display class.
 disp = ILI9341(
-    # height=240,
-    # width=320,
-    # rotation=0,
+    height=320,
+    width=240,
+    rotation=90,
     port=SPI_PORT,
     cs=SPI_CS,
     dc=SPI_DC,
     rst=SPI_RES,
     backlight=BACKLIGHT,
-    # spi_speed_hz=60 * 1000 * 1000,
-    # offset_left=0,
-    # offset_top=0
+    spi_speed_hz=80 * 1000 * 1000,
+    offset_left=0,
+    offset_top=0
 )
 
 # Initialize display.
@@ -45,4 +45,4 @@ while(True):
     end_time = time.time()
     print('Time to draw image: ' + str(end_time - start_time))
     # disp.clear((0, 0, 0))
-    disp.display()
+    # disp.display()
