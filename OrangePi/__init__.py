@@ -25,9 +25,10 @@ import numpy as np
 from PIL import Image
 from PIL import ImageDraw
 
-import Adafruit_GPIO as GPIO
-import Adafruit_GPIO.SPI as SPI
+import spidev
+import OPi.GPIO as GPIO
 
+__version__ = '1.0.0'
 
 # Constants for interacting with display registers.
 ILI9341_TFTWIDTH    = 240
@@ -115,32 +116,69 @@ def image_to_data(image):
 class ILI9341(object):
     """Representation of an ILI9341 TFT LCD."""
 
-    def __init__(self, dc, spi, rst=None, gpio=None, width=ILI9341_TFTWIDTH,
-        height=ILI9341_TFTHEIGHT):
-        """Create an instance of the display using SPI communication.  Must
-        provide the GPIO pin number for the D/C pin and the SPI driver.  Can
-        optionally provide the GPIO pin number for the reset pin as the rst
-        parameter.
+    def __init__(self, port, cs, dc, backlight=None, rst=None, 
+                    width=ILI9341_TFTWIDTH,
+                    height=ILI9341_TFTHEIGHT, 
+                    rotation=90, invert=False, spi_speed_hz=64000000,
+                    offset_left=0,
+                    offset_top=0):
+        """Create an instance of the display using SPI communication.
+
+        Must provide the GPIO pin number for the D/C pin and the SPI driver.
+
+        Can optionally provide the GPIO pin number for the reset pin as the rst parameter.
+
+        :param port: SPI port number
+        :param cs: SPI chip-select number (0 or 1 for BCM
+        :param backlight: Pin for controlling backlight
+        :param rst: Reset pin for ILI9341
+        :param width: Width of display connected to ILI9341
+        :param height: Height of display connected to ILI9341
+        :param rotation: Rotation of display connected to ILI9341
+        :param invert: Invert display
+        :param spi_speed_hz: SPI speed (in Hz)
+
         """
+        if rotation not in [0, 90, 180, 270]:
+            raise ValueError("Invalid rotation {}".format(rotation))
+
+        # if width != height and rotation in [90, 270]:
+        #     raise ValueError("Invalid rotation {} for {}x{} resolution".format(rotation, width, height))
+
+        GPIO.setwarnings(False)
+        GPIO.setmode(GPIO.BCM)
+
+        self._spi = spidev.SpiDev(port, cs)
+        self._spi.mode = 0
+        self._spi.lsbfirst = False
+        self._spi.max_speed_hz = spi_speed_hz
+
         self._dc = dc
         self._rst = rst
-        self._spi = spi
-        self._gpio = gpio
-        self.width = width
-        self.height = height
-        if self._gpio is None:
-            self._gpio = GPIO.get_platform_gpio()
+        self._width = width
+        self._height = height
+        self._rotation = rotation
+        self._invert = invert
+
+        self._offset_left = offset_left
+        self._offset_top = offset_top
+
         # Set DC as output.
-        self._gpio.setup(dc, GPIO.OUT)
+        GPIO.setup(dc, GPIO.OUT)
+
+        # Setup backlight as output (if provided).
+        self._backlight = backlight
+        if backlight is not None:
+            GPIO.setup(backlight, GPIO.OUT)
+            GPIO.output(backlight, GPIO.LOW)
+            time.sleep(0.1)
+            GPIO.output(backlight, GPIO.HIGH)
+
         # Setup reset as output (if provided).
         if rst is not None:
-            self._gpio.setup(rst, GPIO.OUT)
-        # Set SPI to mode 0, MSB first.
-        spi.set_mode(0)
-        spi.set_bit_order(SPI.MSBFIRST)
-        spi.set_clock_hz(64000000)
-        # Create an image buffer.
-        self.buffer = Image.new('RGB', (width, height))
+            GPIO.setup(self._rst, GPIO.OUT)
+            self.reset()
+        self._init()
 
     def send(self, data, is_data=True, chunk_size=4096):
         """Write a byte or array of bytes to the display. Is_data parameter
@@ -149,14 +187,27 @@ class ILI9341(object):
         single SPI transaction, with a default of 4096.
         """
         # Set DC low for command, high for data.
-        self._gpio.output(self._dc, is_data)
+        GPIO.output(self._dc, is_data)
         # Convert scalar argument to list so either can be passed as parameter.
         if isinstance(data, numbers.Number):
             data = [data & 0xFF]
         # Write data a chunk at a time.
         for start in range(0, len(data), chunk_size):
-            end = min(start+chunk_size, len(data))
-            self._spi.write(data[start:end])
+            end = min(start + chunk_size, len(data))
+            self._spi.xfer(data[start:end])
+
+    def set_backlight(self, value):
+        """Set the backlight on/off."""
+        if self._backlight is not None:
+            GPIO.output(self._backlight, value)
+
+    @property
+    def width(self):
+        return self._width if self._rotation == 0 or self._rotation == 180 else self._height
+
+    @property
+    def height(self):
+        return self._height if self._rotation == 0 or self._rotation == 180 else self._width
 
     def command(self, data):
         """Write a byte or array of bytes to the display as command data."""
@@ -169,12 +220,12 @@ class ILI9341(object):
     def reset(self):
         """Reset the display, if reset pin is connected."""
         if self._rst is not None:
-            self._gpio.set_high(self._rst)
-            time.sleep(0.005)
-            self._gpio.set_low(self._rst)
-            time.sleep(0.02)
-            self._gpio.set_high(self._rst)
-            time.sleep(0.150)
+            GPIO.output(self._rst, 1)
+            time.sleep(0.500)
+            GPIO.output(self._rst, 0)
+            time.sleep(0.500)
+            GPIO.output(self._rst, 1)
+            time.sleep(0.500)
 
     def _init(self):
         # Initialize the display.  Broken out as a separate function so it can
@@ -268,23 +319,31 @@ class ILI9341(object):
         self.command(ILI9341_DISPON)    # Display on
 
     def begin(self):
-        """Initialize the display.  Should be called once before other calls that
-        interact with the display are called.
-        """
-        self.reset()
-        self._init()
+        """Set up the display
 
+        Deprecated. Included in __init__.
+
+        """
+        pass
     def set_window(self, x0=0, y0=0, x1=None, y1=None):
         """Set the pixel address window for proceeding drawing commands. x0 and
         x1 should define the minimum and maximum x pixel bounds.  y0 and y1
         should define the minimum and maximum y pixel bound.  If no parameters
         are specified the default will be to update the entire display from 0,0
-        to 239,319.
+        to width-1,height-1.
         """
         if x1 is None:
-            x1 = self.width-1
+            x1 = self._width - 1
+
         if y1 is None:
-            y1 = self.height-1
+            y1 = self._height - 1
+
+        y0 += self._offset_top
+        y1 += self._offset_top
+
+        x0 += self._offset_left
+        x1 += self._offset_left
+        
         self.command(ILI9341_CASET)        # Column addr set
         self.data(x0 >> 8)
         self.data(x0)                    # XSTART
@@ -297,30 +356,37 @@ class ILI9341(object):
         self.data(y1)                    # YEND
         self.command(ILI9341_RAMWR)        # write to RAM
 
-    def display(self, image=None):
-        """Write the display buffer or provided image to the hardware.  If no
-        image parameter is provided the display buffer will be written to the
-        hardware.  If an image is provided, it should be RGB format and the
-        same dimensions as the display hardware.
+    def display(self, image):
+        """Write the provided image to the hardware.
+
+        :param image: Should be RGB format and the same dimensions as the display hardware.
+
         """
-        # By default write the internal buffer to the display.
-        if image is None:
-            image = self.buffer
         # Set address bounds to entire display.
         self.set_window()
-        # Convert image to array of 16bit 565 RGB data bytes.
-        # Unfortunate that this copy has to occur, but the SPI byte writing
-        # function needs to take an array of bytes and PIL doesn't natively
-        # store images in 16-bit 565 RGB format.
-        pixelbytes = list(image_to_data(image))
+
+        # Convert image to 16bit RGB565 format and
+        # flatten into bytes.
+        pixelbytes = self.image_to_data(image, self._rotation)
+
         # Write data to hardware.
-        self.data(pixelbytes)
+        for i in range(0, len(pixelbytes), 4096):
+            self.data(pixelbytes[i:i + 4096])
 
-    def clear(self, color=(0,0,0)):
-        """Clear the image buffer to the specified RGB color (default black)."""
-        width, height = self.buffer.size
-        self.buffer.putdata([color]*(width*height))
+    def image_to_data(self, image, rotation=0):
+        # if not isinstance(image, np.ndarray):
+        #     image = np.array(image.convert('RGB'))
 
-    def draw(self):
-        """Return a PIL ImageDraw instance for 2D drawing on the image buffer."""
-        return ImageDraw.Draw(self.buffer)
+        # Rotate the image
+        pb = np.rot90(image, rotation // 90).astype('uint16')
+
+        # Mask and shift the 888 RGB into 565 RGB
+        red   = (pb[..., [0]] & 0xf8) << 8
+        green = (pb[..., [1]] & 0xfc) << 3
+        blue  = (pb[..., [2]] & 0xf8) >> 3
+
+        # Stick 'em together
+        result = red | green | blue
+
+        # Output the raw bytes
+        return result.byteswap().tobytes()
