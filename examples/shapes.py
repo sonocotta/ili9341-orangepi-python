@@ -15,9 +15,9 @@ BACKLIGHT = 22 # PA3
 
 # Create TFT LCD display class.
 disp = ILI9341(
-    height=320,
-    width=240,
-    rotation=90,
+    width=320,
+    height=240,
+    rotation=0,
     port=SPI_PORT,
     cs=SPI_CS,
     dc=SPI_DC,

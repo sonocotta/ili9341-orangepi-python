@@ -11,7 +11,7 @@ classifiers = ['Development Status :: 4 - Beta',
                'Topic :: System :: Hardware']
 
 setup(name              = 'OrangePi.ILI9341',
-      version           = '1.1.0',
+      version           = '1.1.1',
       author            = 'Andriy Malyshenko',
       author_email      = 'andriy@sonocotta.com',
       description       = 'Library to control ILI9341 TFT LCD displays on the Orange Pi.',
