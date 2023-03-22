@@ -28,11 +28,11 @@ from PIL import ImageDraw
 import spidev
 import OPi.GPIO as GPIO
 
-__version__ = '1.0.0'
+__version__ = '1.1.1'
 
 # Constants for interacting with display registers.
-ILI9341_TFTWIDTH    = 240
-ILI9341_TFTHEIGHT   = 320
+ILI9341_TFTWIDTH    = 320
+ILI9341_TFTHEIGHT   = 240
 
 ILI9341_NOP         = 0x00
 ILI9341_SWRESET     = 0x01
@@ -119,7 +119,7 @@ class ILI9341(object):
     def __init__(self, port, cs, dc, backlight=None, rst=None, 
                     width=ILI9341_TFTWIDTH,
                     height=ILI9341_TFTHEIGHT, 
-                    rotation=90, invert=False, spi_speed_hz=64000000,
+                    rotation=0, invert=False, spi_speed_hz=64000000,
                     offset_left=0,
                     offset_top=0):
         """Create an instance of the display using SPI communication.
@@ -344,17 +344,17 @@ class ILI9341(object):
         x0 += self._offset_left
         x1 += self._offset_left
         
-        self.command(ILI9341_CASET)        # Column addr set
+        self.command(ILI9341_PASET)      # Column addr set
         self.data(x0 >> 8)
         self.data(x0)                    # XSTART
         self.data(x1 >> 8)
         self.data(x1)                    # XEND
-        self.command(ILI9341_PASET)        # Row addr set
+        self.command(ILI9341_CASET)      # Row addr set
         self.data(y0 >> 8)
         self.data(y0)                    # YSTART
         self.data(y1 >> 8)
         self.data(y1)                    # YEND
-        self.command(ILI9341_RAMWR)        # write to RAM
+        self.command(ILI9341_RAMWR)      # write to RAM
 
     def display(self, image):
         """Write the provided image to the hardware.
@@ -378,7 +378,7 @@ class ILI9341(object):
         #     image = np.array(image.convert('RGB'))
 
         # Rotate the image
-        pb = np.rot90(image, rotation // 90).astype('uint16')
+        pb = np.rot90(image, (rotation // 90) -1).astype('uint16')
 
         # Mask and shift the 888 RGB into 565 RGB
         red   = (pb[..., [0]] & 0xf8) << 8
